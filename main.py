@@ -9,6 +9,8 @@ import requests  # Add at the top with other imports
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 load_dotenv()
 
@@ -393,7 +395,22 @@ Once a tester has responded, your test will commence. Good Luck!
     await interaction.response.send_message(embed=embed, view=view)
 
 
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
+
+def run_http_server():
+    port = int(os.getenv('PORT', '8080'))
+    server = HTTPServer(('', port), HealthCheckHandler)
+    server.serve_forever()
+
+# Start HTTP server in a separate thread
+threading.Thread(target=run_http_server, daemon=True).start()
+
 if __name__ == "__main__":
+    # Start the bot
     bot.run(os.getenv('DISCORD_TOKEN'))
 
 
