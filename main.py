@@ -401,17 +401,19 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'OK')
 
-def run_http_server():
-    port = int(os.getenv('PORT', '8080'))
-    server = HTTPServer(('', port), HealthCheckHandler)
-    server.serve_forever()
-
-# Start HTTP server in a separate thread
-threading.Thread(target=run_http_server, daemon=True).start()
+def run_bot():
+    bot.run(os.getenv('DISCORD_TOKEN'))
 
 if __name__ == "__main__":
-    # Start the bot
-    bot.run(os.getenv('DISCORD_TOKEN'))
+    # Start HTTP server first
+    port = int(os.getenv('PORT', '8080'))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    print(f"HTTP server started on port {port}")
+    
+    # Then run the bot
+    run_bot()
 
 
 
