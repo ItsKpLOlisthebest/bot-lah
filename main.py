@@ -121,7 +121,7 @@ class TestingForm(Modal):
         staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
 
         if not category or not staff_role:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "Error: Category or Staff role not found! Please contact an administrator.",
                 ephemeral=True
             )
@@ -164,13 +164,13 @@ class TestingForm(Modal):
             embed.add_field(name="Test Type",
                             value="HT3+ Testing" if self.test_type == TestType.HT3_PLUS else "Evaluation", inline=False)
             await ticket_channel.send(f"{staff_role.mention} New tier testing ticket!", embed=embed)
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"Ticket created successfully! Please check {ticket_channel.mention}",
                 ephemeral=True
             )
 
         except Exception as e:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 f"An error occurred: {str(e)}",
                 ephemeral=True
             )
@@ -238,9 +238,15 @@ async def results(
             choices=VALID_RANKS
         )
 ):
-    if not await require_role()(interaction):
+    # Check role first without deferring
+    if not has_required_role(interaction):
+        await interaction.response.send_message(
+            "You don't have permission to use this command.",
+            ephemeral=True
+        )
         return
-    # Acknowledge the interaction immediately
+        
+    # Now we can defer since we haven't responded yet
     await interaction.response.defer(ephemeral=True)
     
     print(f"\n=== Processing Results Command ===")
@@ -356,20 +362,19 @@ async def results(
 
 @bot.slash_command(name="cooldown", description="Check your remaining ticket cooldown")
 async def check_cooldown(interaction: Interaction):
-    await interaction.response.defer(ephemeral=True)
     user_id = interaction.user.id
     if user_id not in ticket_cooldowns:
-        await interaction.followup.send("You have no active cooldown!", ephemeral=True)
+        await interaction.response.send_message("You have no active cooldown!", ephemeral=True)
         return
 
     time_remaining = ticket_cooldowns[user_id] - datetime.now()
     if time_remaining.total_seconds() <= 0:
         del ticket_cooldowns[user_id]
-        await interaction.followup.send("You have no active cooldown!", ephemeral=True)
+        await interaction.response.send_message("You have no active cooldown!", ephemeral=True)
     else:
         hours = int(time_remaining.total_seconds() // 3600)
         minutes = int((time_remaining.total_seconds() % 3600) // 60)
-        await interaction.followup.send(
+        await interaction.response.send_message(
             f"You must wait {hours}h {minutes}m before creating another ticket.",
             ephemeral=True
         )
@@ -384,8 +389,7 @@ async def on_ready():
 async def setup(interaction: Interaction):
     if not await require_role()(interaction):
         return
-    
-    # Remove the defer since we're sending the message immediately
+    await interaction.response.defer()
     embed = nextcord.Embed(title="Crystal Tier List", color=0x5865F2)
     embed.description = """Upon interacting, you will be asked to answer a form.
 Once you have finished, a ticket will be created and await a Tester to respond.
@@ -396,8 +400,7 @@ Once a tester has responded, your test will commence. Good Luck!
 • Username should be the name of the account you will be testing on"""
 
     view = TestingView()
-    # Use response.send_message directly since this is a quick operation
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.followup.send(embed=embed, view=view)
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
