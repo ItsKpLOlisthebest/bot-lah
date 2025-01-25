@@ -384,7 +384,8 @@ async def on_ready():
 async def setup(interaction: Interaction):
     if not await require_role()(interaction):
         return
-    await interaction.response.defer()
+    
+    # Remove the defer since we're sending the message immediately
     embed = nextcord.Embed(title="Crystal Tier List", color=0x5865F2)
     embed.description = """Upon interacting, you will be asked to answer a form.
 Once you have finished, a ticket will be created and await a Tester to respond.
@@ -395,7 +396,8 @@ Once a tester has responded, your test will commence. Good Luck!
 • Username should be the name of the account you will be testing on"""
 
     view = TestingView()
-    await interaction.followup.send(embed=embed, view=view)
+    # Use response.send_message directly since this is a quick operation
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
