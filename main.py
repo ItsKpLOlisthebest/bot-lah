@@ -102,78 +102,96 @@ class TestingForm(Modal):
         self.add_item(self.tier)
 
     async def callback(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=True)
-        
-        user_id = interaction.user.id
-        if user_id in ticket_cooldowns:
-            time_remaining = ticket_cooldowns[user_id] - datetime.now()
-            if time_remaining.total_seconds() > 0:
-                hours = int(time_remaining.total_seconds() // 3600)
-                minutes = int((time_remaining.total_seconds() % 3600) // 60)
+        try:
+            await interaction.response.defer(ephemeral=True)
+            
+            user_id = interaction.user.id
+            if user_id in ticket_cooldowns:
+                time_remaining = ticket_cooldowns[user_id] - datetime.now()
+                if time_remaining.total_seconds() > 0:
+                    hours = int(time_remaining.total_seconds() // 3600)
+                    minutes = int((time_remaining.total_seconds() % 3600) // 60)
+                    await interaction.followup.send(
+                        f"You must wait {hours}h {minutes}m before creating another ticket.",
+                        ephemeral=True
+                    )
+                    return
+
+            category_id = HT3_CATEGORY_ID if self.test_type == TestType.HT3_PLUS else EVAL_CATEGORY_ID
+            category = interaction.guild.get_channel(category_id)
+            staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+
+            if not category or not staff_role:
                 await interaction.followup.send(
-                    f"You must wait {hours}h {minutes}m before creating another ticket.",
+                    "Error: Category or Staff role not found! Please contact an administrator.",
                     ephemeral=True
                 )
                 return
 
-        category_id = HT3_CATEGORY_ID if self.test_type == TestType.HT3_PLUS else EVAL_CATEGORY_ID
-        category = interaction.guild.get_channel(category_id)
-        staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+            overwrites = {
+                interaction.guild.default_role: PermissionOverwrite(read_messages=False),
+                interaction.guild.me: PermissionOverwrite(read_messages=True, send_messages=True),
+                interaction.user: PermissionOverwrite(read_messages=True, send_messages=True),
+                staff_role: PermissionOverwrite(read_messages=True, send_messages=True)
+            }
 
-        if not category or not staff_role:
-            await interaction.response.send_message(
-                "Error: Category or Staff role not found! Please contact an administrator.",
-                ephemeral=True
-            )
-            return
+            channel_name = f"ticket-{interaction.user.id}-{self.ign.value}"
+            channel_name = channel_name.lower().replace(' ', '-')
 
-        overwrites = {
-            interaction.guild.default_role: PermissionOverwrite(read_messages=False),
-            interaction.guild.me: PermissionOverwrite(read_messages=True, send_messages=True),
-            interaction.user: PermissionOverwrite(read_messages=True, send_messages=True),
-            staff_role: PermissionOverwrite(read_messages=True, send_messages=True)
-        }
+            try:
+                ticket_channel = await interaction.guild.create_text_channel(
+                    name=channel_name,
+                    category=category,
+                    overwrites=overwrites,
+                    topic=f"Tier Testing Ticket for {interaction.user.mention}"
+                )
 
-        channel_name = f"ticket-{interaction.user.id}-{self.ign.value}"
-        channel_name = channel_name.lower().replace(' ', '-')
+                ticket_cooldowns[interaction.user.id] = datetime.now() + COOLDOWN_DURATION
 
-        try:
-            ticket_channel = await interaction.guild.create_text_channel(
-                name=channel_name,
-                category=category,
-                overwrites=overwrites,
-                topic=f"Tier Testing Ticket for {interaction.user.mention}"
-            )
+                embed = nextcord.Embed(
+                    title="New Testing Application",
+                    description="A staff member will be with you shortly.",
+                    color=0x00ff00
+                )
+                embed.add_field(name="Applicant", value=interaction.user.mention, inline=False)
+                embed.add_field(name="Minecraft Username", value=self.ign.value, inline=False)
+                embed.add_field(name="Preferred Server", value=self.server.value, inline=False)
+                embed.add_field(name="Region", value=self.region.value, inline=False)
+                # Update the message for HT3+ testing
+                if self.test_type == TestType.HT3_PLUS:
+                    embed.add_field(name="Goal Tier", value=self.tier.value, inline=False)
+                else:
+                    embed.add_field(name="Current Tier", value=self.tier.value, inline=False)
+                embed.add_field(name="Test Type",
+                                value="HT3+ Testing" if self.test_type == TestType.HT3_PLUS else "Evaluation", inline=False)
+                await ticket_channel.send(f"{staff_role.mention} New tier testing ticket!", embed=embed)
+                await interaction.followup.send(
+                    f"Ticket created successfully! Please check {ticket_channel.mention}",
+                    ephemeral=True
+                )
 
-            ticket_cooldowns[interaction.user.id] = datetime.now() + COOLDOWN_DURATION
+            except Exception as e:
+                await interaction.followup.send(
+                    f"An error occurred: {str(e)}",
+                    ephemeral=True
+                )
 
-            embed = nextcord.Embed(
-                title="New Testing Application",
-                description="A staff member will be with you shortly.",
-                color=0x00ff00
-            )
-            embed.add_field(name="Applicant", value=interaction.user.mention, inline=False)
-            embed.add_field(name="Minecraft Username", value=self.ign.value, inline=False)
-            embed.add_field(name="Preferred Server", value=self.server.value, inline=False)
-            embed.add_field(name="Region", value=self.region.value, inline=False)
-            # Update the message for HT3+ testing
-            if self.test_type == TestType.HT3_PLUS:
-                embed.add_field(name="Goal Tier", value=self.tier.value, inline=False)
-            else:
-                embed.add_field(name="Current Tier", value=self.tier.value, inline=False)
-            embed.add_field(name="Test Type",
-                            value="HT3+ Testing" if self.test_type == TestType.HT3_PLUS else "Evaluation", inline=False)
-            await ticket_channel.send(f"{staff_role.mention} New tier testing ticket!", embed=embed)
-            await interaction.response.send_message(
-                f"Ticket created successfully! Please check {ticket_channel.mention}",
-                ephemeral=True
-            )
-
+        except nextcord.errors.InteractionResponded:
+            try:
+                await interaction.followup.send(
+                    "Processing your request...",
+                    ephemeral=True
+                )
+            except:
+                pass
         except Exception as e:
-            await interaction.response.send_message(
-                f"An error occurred: {str(e)}",
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    f"An error occurred: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                print(f"Error in callback: {str(e)}")
 
 
 class TestingView(View):
@@ -238,126 +256,146 @@ async def results(
             choices=VALID_RANKS
         )
 ):
-    # Check role first without deferring
-    if not has_required_role(interaction):
-        await interaction.response.send_message(
-            "You don't have permission to use this command.",
-            ephemeral=True
-        )
-        return
+    try:
+        # Check role first
+        if not has_required_role(interaction):
+            try:
+                await interaction.response.send_message(
+                    "You don't have permission to use this command.",
+                    ephemeral=True
+                )
+            except:
+                await interaction.followup.send(
+                    "You don't have permission to use this command.",
+                    ephemeral=True
+                )
+            return
+
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except:
+            pass
         
-    # Now we can defer since we haven't responded yet
-    await interaction.response.defer(ephemeral=True)
-    
-    print(f"\n=== Processing Results Command ===")
-    print(f"Channel: {interaction.channel.name}")
-    print(f"MC Username: {mc_username}")
-    
-    # Verify command is used in a ticket channel
-    if not interaction.channel.name.startswith("ticket-"):
-        await interaction.followup.send("This command can only be used in ticket channels!", ephemeral=True)
-        return
+        print(f"\n=== Processing Results Command ===")
+        print(f"Channel: {interaction.channel.name}")
+        print(f"MC Username: {mc_username}")
+        
+        # Verify command is used in a ticket channel
+        if not interaction.channel.name.startswith("ticket-"):
+            await interaction.followup.send("This command can only be used in ticket channels!", ephemeral=True)
+            return
 
-    # Get the tested user from the ticket channel name
-    tested_user = None
-    channel_name_parts = interaction.channel.name.split('-')
-    
-    print(f"Channel name parts: {channel_name_parts}")
-    
-    if len(channel_name_parts) >= 2:
-        try:
-            user_id = int(channel_name_parts[1])
-            print(f"Looking for user ID: {user_id}")
-            tested_user = await interaction.guild.fetch_member(user_id)
-            if tested_user:
-                print(f"Found matching user: {tested_user.name} (ID: {tested_user.id})")
-        except (ValueError, nextcord.NotFound) as e:
-            print(f"Error finding user: {e}")
+        # Get the tested user from the ticket channel name
+        tested_user = None
+        channel_name_parts = interaction.channel.name.split('-')
+        
+        print(f"Channel name parts: {channel_name_parts}")
+        
+        if len(channel_name_parts) >= 2:
+            try:
+                user_id = int(channel_name_parts[1])
+                print(f"Looking for user ID: {user_id}")
+                tested_user = await interaction.guild.fetch_member(user_id)
+                if tested_user:
+                    print(f"Found matching user: {tested_user.name} (ID: {tested_user.id})")
+            except (ValueError, nextcord.NotFound) as e:
+                print(f"Error finding user: {e}")
 
-    if not tested_user:
-        await interaction.followup.send(
-            f"Could not find the tested user! Channel format should be ticket-userid-minecraft",
-            ephemeral=True
-        )
-        return
-
-    minecraft_uuid = await get_minecraft_uuid(mc_username)
-    if not minecraft_uuid:
-        await interaction.response.send_message(
-            f"Could not find Minecraft player: {mc_username}",
-            ephemeral=True
-        )
-        return
-
-    # Create results embed
-    results_embed = nextcord.Embed(
-        color=0xff0000
-    )
-
-    results_embed.set_author(
-        name=f"{tested_user.display_name}'s Test Results 🏆",
-        icon_url=tested_user.display_avatar.url
-    )
-
-    results_embed.add_field(name="Tester", value=interaction.user.mention, inline=False)
-    results_embed.add_field(name="Player", value=tested_user.mention, inline=False)
-    results_embed.add_field(name="Region", value=region, inline=False)
-    results_embed.add_field(name="Minecraft Username", value=mc_username, inline=False)
-    results_embed.add_field(name="Previous Rank", value=previous_rank, inline=False)
-    results_embed.add_field(name="Rank Earned", value=new_rank, inline=False)
-
-    print(f"Embed fields: {results_embed.to_dict()}")
-
-    # Send results to results channel
-    results_channel = interaction.guild.get_channel(RESULTS_CHANNEL_ID)
-    if results_channel:
-        try:
-            message = await results_channel.send(content=tested_user.mention, embed=results_embed)
-            emojis = ["👑", "🥳", "😱", "😭", "😂", "💀"]
-
-            for emoji in emojis:
-                await message.add_reaction(emoji)
-        except Exception as e:
+        if not tested_user:
             await interaction.followup.send(
-                f"Error sending results: {str(e)}",
+                f"Could not find the tested user! Channel format should be ticket-userid-minecraft",
                 ephemeral=True
             )
             return
-    else:
-        await interaction.followup.send(
-            "Results channel not found!",
-            ephemeral=True
+
+        minecraft_uuid = await get_minecraft_uuid(mc_username)
+        if not minecraft_uuid:
+            await interaction.response.send_message(
+                f"Could not find Minecraft player: {mc_username}",
+                ephemeral=True
+            )
+            return
+
+        # Create results embed
+        results_embed = nextcord.Embed(
+            color=0xff0000
         )
-        return
 
-    # Assign new role
-    if new_rank in TIER_ROLES:
+        results_embed.set_author(
+            name=f"{tested_user.display_name}'s Test Results 🏆",
+            icon_url=tested_user.display_avatar.url
+        )
+
+        results_embed.add_field(name="Tester", value=interaction.user.mention, inline=False)
+        results_embed.add_field(name="Player", value=tested_user.mention, inline=False)
+        results_embed.add_field(name="Region", value=region, inline=False)
+        results_embed.add_field(name="Minecraft Username", value=mc_username, inline=False)
+        results_embed.add_field(name="Previous Rank", value=previous_rank, inline=False)
+        results_embed.add_field(name="Rank Earned", value=new_rank, inline=False)
+
+        print(f"Embed fields: {results_embed.to_dict()}")
+
+        # Send results to results channel
+        results_channel = interaction.guild.get_channel(RESULTS_CHANNEL_ID)
+        if results_channel:
+            try:
+                message = await results_channel.send(content=tested_user.mention, embed=results_embed)
+                emojis = ["👑", "🥳", "😱", "😭", "😂", "💀"]
+
+                for emoji in emojis:
+                    await message.add_reaction(emoji)
+            except Exception as e:
+                await interaction.followup.send(
+                    f"Error sending results: {str(e)}",
+                    ephemeral=True
+                )
+                return
+        else:
+            await interaction.followup.send(
+                "Results channel not found!",
+                ephemeral=True
+            )
+            return
+
+        # Assign new role
+        if new_rank in TIER_ROLES:
+            try:
+                # Remove old tier roles
+                for role_name, role_id in TIER_ROLES.items():
+                    role = interaction.guild.get_role(role_id)
+                    if role and role in tested_user.roles:
+                        await tested_user.remove_roles(role)
+
+                # Add new tier role
+                new_role = interaction.guild.get_role(TIER_ROLES[new_rank])
+                if new_role:
+                    await tested_user.add_roles(new_role)
+                else:
+                    await interaction.channel.send("Warning: Could not find the new rank role!")
+            except Exception as e:
+                await interaction.channel.send(f"Warning: Could not update roles: {str(e)}")
+
+        # Notify about ticket closure
+        await interaction.followup.send("Results submitted successfully!", ephemeral=True)
+        await interaction.channel.send("Test completed! This ticket will be closed in 10 seconds.")
+
+        # Delete the channel after 10 seconds
+        await asyncio.sleep(10)
         try:
-            # Remove old tier roles
-            for role_name, role_id in TIER_ROLES.items():
-                role = interaction.guild.get_role(role_id)
-                if role and role in tested_user.roles:
-                    await tested_user.remove_roles(role)
-
-            # Add new tier role
-            new_role = interaction.guild.get_role(TIER_ROLES[new_rank])
-            if new_role:
-                await tested_user.add_roles(new_role)
-            else:
-                await interaction.channel.send("Warning: Could not find the new rank role!")
+            await interaction.channel.delete()
         except Exception as e:
-            await interaction.channel.send(f"Warning: Could not update roles: {str(e)}")
+            print(f"Error deleting channel: {e}")
 
-    # Notify about ticket closure
-    await interaction.followup.send("Results submitted successfully!", ephemeral=True)
-    await interaction.channel.send("Test completed! This ticket will be closed in 10 seconds.")
-
-    # Delete the channel after 10 seconds
-    await asyncio.sleep(10)
-    try:
-        await interaction.channel.delete()
+    except nextcord.errors.InteractionResponded:
+        try:
+            await interaction.followup.send("Processing your request...", ephemeral=True)
+        except:
+            pass
     except Exception as e:
-        print(f"Error deleting channel: {e}")
+        try:
+            await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
+        except:
+            print(f"Error in results command: {str(e)}")
 
 
 @bot.slash_command(name="cooldown", description="Check your remaining ticket cooldown")
@@ -387,11 +425,16 @@ async def on_ready():
 
 @bot.slash_command(name="setup123", description="Setup the testing system")
 async def setup(interaction: Interaction):
-    if not await require_role()(interaction):
-        return
-    await interaction.response.defer()
-    embed = nextcord.Embed(title="Crystal Tier List", color=0x5865F2)
-    embed.description = """Upon interacting, you will be asked to answer a form.
+    try:
+        if not has_required_role(interaction):
+            await interaction.response.send_message(
+                "You don't have permission to use this command.",
+                ephemeral=True
+            )
+            return
+
+        embed = nextcord.Embed(title="Crystal Tier List", color=0x5865F2)
+        embed.description = """Upon interacting, you will be asked to answer a form.
 Once you have finished, a ticket will be created and await a Tester to respond.
 If you are HT3 or higher, please use the HT3+ Testing button.
 Once a tester has responded, your test will commence. Good Luck!
@@ -399,8 +442,22 @@ Once a tester has responded, your test will commence. Good Luck!
 • Region should be the region of the server you wish to test on
 • Username should be the name of the account you will be testing on"""
 
-    view = TestingView()
-    await interaction.followup.send(embed=embed, view=view)
+        view = TestingView()
+        
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+        except nextcord.errors.InteractionResponded:
+            await interaction.followup.send(embed=embed, view=view)
+            
+    except Exception as e:
+        print(f"Error in setup command: {str(e)}")
+        try:
+            await interaction.followup.send(
+                "An error occurred while setting up the testing system.",
+                ephemeral=True
+            )
+        except:
+            pass
 
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -411,6 +468,10 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
 
 def run_bot():
     bot.run(os.getenv('DISCORD_TOKEN'))
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    print(f"Error in {event}: {args} {kwargs}")
 
 if __name__ == "__main__":
     # Start HTTP server first
