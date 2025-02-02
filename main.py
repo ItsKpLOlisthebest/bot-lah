@@ -381,10 +381,7 @@ async def results(
 
         # Delete the channel after 10 seconds
         await asyncio.sleep(10)
-        try:
-            await interaction.channel.delete()
-        except Exception as e:
-            print(f"Error deleting channel: {e}")
+        await delete_channel(interaction.channel)
 
     except nextcord.errors.InteractionResponded:
         try:
@@ -421,6 +418,16 @@ async def check_cooldown(interaction: Interaction):
 @bot.event
 async def on_ready():
     print(f"Bot is ready! Logged in as {bot.user}")
+
+
+@bot.event
+async def on_disconnect():
+    print("Bot disconnected! Attempting to reconnect...")
+
+
+@bot.event
+async def on_resumed():
+    print("Bot reconnected!")
 
 
 @bot.slash_command(name="setup123", description="Setup the testing system")
@@ -460,29 +467,33 @@ Once a tester has responded, your test will commence. Good Luck!
             pass
 
 
+async def delete_channel(channel):
+    try:
+        await channel.delete()
+    except nextcord.NotFound:
+        print(f"Channel {channel.name} not found for deletion.")
+    except Exception as e:
+        print(f"Error deleting channel: {e}")
+
+
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b'OK')
 
-def run_bot():
-    bot.run(os.getenv('DISCORD_TOKEN'))
-
-@bot.event
-async def on_error(event, *args, **kwargs):
-    print(f"Error in {event}: {args} {kwargs}")
-
-if __name__ == "__main__":
-    # Start HTTP server first
+def run_http_server():
     port = int(os.getenv('PORT', '8080'))
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    print(f"HTTP server started on port {port}")
-    
-    # Then run the bot
-    run_bot()
+    server.serve_forever()
+
+if __name__ == "__main__":
+    # Start HTTP server in a separate thread
+    threading.Thread(target=run_http_server, daemon=True).start()
+    print("HTTP server started for health checks.")
+
+    # Run the bot
+    bot.run(os.getenv('DISCORD_TOKEN'))
 
 
 
