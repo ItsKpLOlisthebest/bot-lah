@@ -417,6 +417,7 @@ async def check_cooldown(interaction: Interaction):
 
 @bot.event
 async def on_ready():
+    print("joho song is sped")
     print(f"Bot is ready! Logged in as {bot.user}")
 
 
